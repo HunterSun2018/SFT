@@ -1,0 +1,224 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.0;
+
+import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
+import "@openzeppelin/contracts/token/ERC721/IERC721Receiver.sol";
+import "@openzeppelin/contracts/token/ERC721/extensions/IERC721Metadata.sol";
+import "@openzeppelin/contracts/utils/Address.sol";
+
+interface IERC3525 is IERC721 {
+    function slotOf(uint256 tokenId) external view returns (uint256);
+    function valueOf(uint256 tokenId) external view returns (uint256);
+    function transferValue(uint256 tokenId, uint256 value) external;
+    function transferValueFrom(uint256 fromTokenId, uint256 toTokenId, uint256 value) external;
+    function approveValue(uint256 tokenId, address spender, uint256 value) external;
+    function allowanceValue(uint256 tokenId, address spender) external view returns (uint256);
+    function transferFrom(address from, address to, uint256 tokenId, uint256 value) external;
+}
+
+contract SemiFungibleToken is IERC3525, IERC721Metadata {
+    using Address for address;
+
+    string private _name;
+    string private _symbol;
+    mapping (uint256 => uint256) private _tokenValues;
+    mapping (uint256 => uint256) private _tokenSlots;
+    mapping (uint256 => address) private _tokenApprovals;
+    mapping (address => mapping (address => uint256)) private _operatorValueApprovals;
+    mapping (address => uint256[]) private _ownedTokens;
+    mapping (uint256 => uint256) private _ownedTokenIndexes;
+    uint256[] private _allTokens;
+    mapping (uint256 => uint256) private _allTokenIndexes;
+
+    constructor(string memory name_, string memory symbol_) {
+        _name = name_;
+        _symbol = symbol_;
+    }
+
+    function name() public view virtual override returns (string memory) {
+        return _name;
+    }
+
+    function symbol() public view virtual override returns (string memory) {
+        return _symbol;
+    }
+
+    function tokenURI(uint256 tokenId) public view virtual override returns (string memory) {
+        require(_exists(tokenId), "ERC721Metadata: URI query for nonexistent token");
+
+        return "";
+    }
+
+    function supportsInterface(bytes4 interfaceId) public view virtual override returns (bool) {
+        return interfaceId == type(IERC721).interfaceId ||
+               interfaceId == type(IERC721Metadata).interfaceId ||
+               interfaceId == type(IERC3525).interfaceId;
+    }
+
+    function balanceOf(address owner) public view virtual override returns (uint256) {
+        require(owner != address(0), "ERC721: balance query for the zero address");
+
+        return _ownedTokens[owner].length;
+    }
+
+    function tokenOfOwnerByIndex(address owner, uint256 index) public view virtual override returns (uint256) {
+        require(index < balanceOf(owner), "ERC721Enumerable: owner index out of bounds");
+
+        return _ownedTokens[owner][index];
+    }
+
+    function totalSupply() public view virtual override returns (uint256) {
+        return _allTokens.length;
+    }
+
+    function tokenByIndex(uint256 index) public view virtual override returns (uint256) {
+        require(index < totalSupply(), "ERC721Enumerable: global index out of bounds");
+
+        return _allTokens[index];
+    }
+
+    function transferFrom(address from, address to, uint256 tokenId) public virtual override {
+       // transferFrom(from, to, tokenId,
+        _tokenValues[tokenId];
+    }
+
+    function slotOf(uint256 tokenId) public view virtual override returns (uint256) {
+        require(_exists(tokenId), "ERC721Metadata: slot query for nonexistent token");
+
+        return _tokenSlots[tokenId];
+    }
+
+function transferValue(uint256 tokenId, uint256 value) public virtual override {
+    address from = ownerOf(tokenId);
+    require(from != address(0), "ERC721: transfer of token that is not own");
+    require(_isApprovedOrOwner(msg.sender, tokenId), "ERC721: transfer caller is not owner nor approved");
+    require(_tokenValues[tokenId] >= value, "ERC3525: transferValue amount exceeds balance");
+
+    _tokenValues[tokenId] -= value;
+
+    emit ValueTransfer(msg.sender, from, tokenId, value);
+}
+
+function transferValueFrom(uint256 fromTokenId, uint256 toTokenId, uint256 value) public virtual override {
+    address from = ownerOf(fromTokenId);
+    address to = ownerOf(toTokenId);
+    require(from != address(0), "ERC721: transfer of token that is not own");
+    require(_isApprovedOrOwner(msg.sender, fromTokenId), "ERC721: transfer caller is not owner nor approved");
+    require(_tokenValues[fromTokenId] >= value, "ERC3525: transferValueFrom amount exceeds balance");
+
+    _tokenValues[fromTokenId] -= value;
+    _tokenValues[toTokenId] += value;
+
+    emit ValueTransferFrom(msg.sender, from, fromTokenId, toTokenId, value);
+}
+
+function approveValue(uint256 tokenId, address spender, uint256 value) public virtual override {
+    address owner = ownerOf(tokenId);
+    require(spender != owner, "ERC721: approval to current owner");
+    require(_isApprovedOrOwner(msg.sender, tokenId), "ERC721: approve caller is not owner nor approved");
+
+    _tokenApprovals[tokenId] = spender;
+
+    emit Approval(owner, spender, tokenId);
+    emit ValueApproval(tokenId, spender, value);
+}
+
+function allowanceValue(uint256 tokenId, address spender) public view virtual override returns (uint256) {
+    require(_exists(tokenId), "ERC721: allowance query for nonexistent token");
+
+    return _tokenApprovals[tokenId] == spender ? _tokenValues[tokenId] : 0;
+}
+
+function transferFrom(address from, address to, uint256 tokenId, uint256 value) public virtual override {
+    require(_isApprovedOrOwner(msg.sender, tokenId), "ERC721: transfer caller is not owner nor approved");
+    require(value <= _tokenValues[tokenId], "ERC3525: transferFrom amount exceeds balance");
+
+    _tokenValues[tokenId] -= value;
+    _transfer(from, to, tokenId);
+
+    emit ValueTransfer(msg.sender, from, tokenId, value);
+}
+
+function _mint(address to, uint256 tokenId, uint256 value, uint256 slot) internal virtual {
+    require(to != address(0), "ERC721: mint to the zero address");
+    require(!_exists(tokenId), "ERC721: token already minted");
+
+    _tokenValues[tokenId] = value;
+    _tokenSlots[tokenId] = slot;
+    _ownedTokens[to].push(tokenId);
+    _ownedTokenIndexes[tokenId] = _ownedTokens[to].length - 1;
+    _allTokens.push(tokenId);
+    _allTokenIndexes[tokenId] = _allTokens.length - 1;
+
+    emit Transfer(address(0), to, tokenId);
+}
+
+function _burn(uint256 tokenId) internal virtual {
+    address owner = ownerOf(tokenId);
+
+    _clearApproval(tokenId);
+
+    //_owned
+    Tokens[owner][slotOf(tokenId)] -= _tokenValues[tokenId];
+    delete _tokenValues[tokenId];
+    delete _tokenSlots[tokenId];
+    _removeTokenFrom(owner, tokenId);
+    _removeToken(tokenId);
+
+    emit Transfer(owner, address(0), tokenId);
+}
+
+function _transfer(address from, address to, uint256 tokenId) internal virtual override {
+    require(ownerOf(tokenId) == from, "ERC721: transfer of token that is not own");
+    require(to != address(0), "ERC721: transfer to the zero address");
+
+    _clearApproval(tokenId);
+
+    _removeTokenFrom(from, tokenId);
+    _addTokenTo(to, tokenId);
+
+    emit Transfer(from, to, tokenId);
+}
+
+function _removeTokenFrom(address from, uint256 tokenId) internal virtual {
+    uint256 lastTokenIndex = _ownedTokens[from].length - 1;
+    uint256 tokenIndex = _ownedTokenIndexes[tokenId];
+
+    if (tokenIndex != lastTokenIndex) {
+        uint256 lastTokenId = _ownedTokens[from][lastTokenIndex];
+
+        _ownedTokens[from][tokenIndex] = lastTokenId;
+        _ownedTokenIndexes[lastTokenId] = tokenIndex;
+    }
+
+    _ownedTokens[from].pop();
+    delete _ownedTokenIndexes[tokenId];
+}
+
+function _addTokenTo(address to, uint256 tokenId) internal virtual {
+    require(!_ownedTokens[to].contains(tokenId), "ERC721: token already owned");
+
+    _ownedTokens[to].push(tokenId);
+    _ownedTokenIndexes[tokenId] = _ownedTokens[to].length - 1;
+}
+
+function _removeToken(uint256 tokenId) internal virtual {
+    uint256 lastTokenIndex = _allTokens.length - 1;
+    uint256 tokenIndex = _allTokenIndexes[tokenId];
+
+    if (tokenIndex != lastTokenIndex) {
+        uint256 lastTokenId = _allTokens[lastTokenIndex];
+
+        _allTokens[tokenIndex] = lastTokenId;
+        _allTokenIndexes[lastTokenId] = tokenIndex;
+    }
+
+    _allTokens.pop();
+    delete _allTokenIndexes[tokenId];
+}
+
+function _isApprovedOrOwner(address spender, uint256 tokenId) internal view virtual returns (bool) {
+    require(_exists(tokenId), "ERC721: operator query for nonexistent token");
+    address owner = ownerOf(tokenId);
+    return (spender == owner || getApproved(tokenId) == spender || isApprovedForAll(owner, spender));
+}
