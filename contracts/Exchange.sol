@@ -6,10 +6,11 @@ import "@openzeppelin/contracts/token/ERC721/IERC721.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 interface ITokenExchange {
-    
+    // Define an event for logging token exchanges    
+    event ExchangeTokens(address indexed owner, uint256 amount, uint256 tokenId);
 }
 
-contract TokenExchange {
+contract TokenExchange is ITokenExchange {
     // Define the ERC721 and ERC20 token contracts
     IERC721 public nftContract;
     IERC20 public tokenContract;
@@ -17,8 +18,7 @@ contract TokenExchange {
     // Define the exchange rate of ERC20 tokens to ERC721 tokens
     uint256 public exchangeRate;
 
-    // Define an event for logging token exchanges    
-    event ExchangeTokens(address indexed owner, uint256 amount, uint256 tokenId);    
+    
 
     // Constructor function to set the exchange rate and token contracts
     constructor(IERC721 _nftContract, IERC20 _tokenContract, uint256 _exchangeRate) {
